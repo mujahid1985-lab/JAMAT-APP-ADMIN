@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#103C4A">
+<title>লিডারবোর্ড</title>
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="p-body">
+<main class="p-wrap" id="app"></main>
+<script type="module">
+import { requireUser, touchUser, topHtml, bd, n2, rollNum, loaderHtml, msgHtml, emptyHtml, mountNav, loadLeaders, esc, toBn, T } from "./assets/app.js";
+
+const app = document.getElementById('app'), $ = (id) => document.getElementById(id);
+const bar = `<div class="p-bar"><span class="p-pct"><span>${esc(T('lb_rank'))}</span> <b class="p-bd" id="lbRank"></b></span><span class="p-pct"><span>${esc(T('lb_pts'))}</span> <b class="p-bd" id="lbPts"></b></span></div>`;
+document.body.insertAdjacentHTML('afterbegin', topHtml({ title: T('lb_t'), back: 'index.html', bar }));
+document.title = T('lb_t');
+rollNum($('lbRank'), '—', 0); rollNum($('lbPts'), n2(0), 0);
+app.innerHTML = loaderHtml(4);
+const user = await requireUser(); touchUser(user); mountNav('lb');
+const LIMIT = 100;
+const nm = (r) => String(r.n || '').trim() || T('user_def');
+const stat = (r) => T('lb_stat', { c: toBn(r.c || 0), w: toBn(r.w || 0), x: toBn(r.x || 0) });
+try {
+  const list = await loadLeaders(), at = list.findIndex(x => x.uid === user.uid), me = at >= 0 ? list[at] : null;
+  rollNum($('lbRank'), me ? n2(at + 1) : '—', 0); rollNum($('lbPts'), n2(me ? me.p || 0 : 0), 0);
+  if (!list.length) { app.innerHTML = emptyHtml('', T('lb_empty')); throw new Error('__empty'); }
+  const pod = (r, k) => r ? `<div class="p${k}"><b class="p-bd"><i>${n2(k)}</i></b><i class="av">${esc(nm(r).charAt(0).toUpperCase())}</i><span class="nm">${esc(nm(r))}</span>${r.uid === user.uid ? `<span class="lb-you">${esc(T('lb_you'))}</span>` : ''}<span class="pt"><b>${toBn(r.p || 0)}</b> ${esc(T('lb_pts'))}</span></div>` : '<div class="none" aria-hidden="true"></div>';
+  const row = (r, k) => { const you = r.uid === user.uid; return `<div class="p-gr-row lb-row${you ? ' me' : ''}"><span class="p-lnk"><i class="n">${n2(k)}</i><span class="tx"><span class="p-t">${esc(nm(r))}${you ? ' · ' + esc(T('lb_you')) : ''}</span><small class="p-sy">${esc(stat(r))}</small></span></span><b class="p-bd"><i>${toBn(r.p || 0)}</i></b></div>`; };
+  const total = esc(T('lb_total')).replace('{n}', `<b class="p-bd">${n2(list.length)}</b>`);
+  const rest = list.slice(3, LIMIT);
+  let html = `<div class="lb-pod rv">${pod(list[1], 2)}${pod(list[0], 1)}${pod(list[2], 3)}</div>`;
+  html += `<section class="p-gr rv" style="--i:1"><h3 class="p-t"><span>${esc(T('lb_card'))}</span><span>${total}</span></h3>${rest.map((r, k) => row(r, k + 4)).join('')}</section>`;
+  if (!rest.length) html = html.replace(/<section class="p-gr[\s\S]*<\/section>/, '');
+  if (at >= LIMIT) html += `<span class="lb-gap"></span><section class="p-gr rv"><h3 class="p-t"><span>${esc(T('lb_far'))}</span></h3>${row(me, at + 1)}</section>`;
+  app.innerHTML = `<div class="p-stack">${html}</div>`;
+} catch (err) { if (err.message !== '__empty') { console.error(err); app.innerHTML = msgHtml(T('load_err'), true); } }
+</script>
+</body>
+</html>

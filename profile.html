@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#103C4A">
+<title>প্রোফাইল</title>
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="p-body">
+<main class="p-wrap" id="app"></main>
+<script type="module">
+import { requireUser, touchUser, freshUser, topHtml, n2, loaderHtml, msgHtml, mountNav, sectionsByIds, quizTotals, accOf, loadLeaders, nameOf, streakOf, esc, toBn, T } from "./assets/app.js";
+
+const app = document.getElementById('app');
+document.body.insertAdjacentHTML('afterbegin', topHtml({ title: T('pf_t'), back: 'index.html' }));
+document.title = T('pf_t');
+app.innerHTML = loaderHtml(4);
+const user = await requireUser(); touchUser(user); mountNav('me');
+try {
+  const [me, list] = await Promise.all([freshUser(user), loadLeaders().catch(() => [])]);
+  const Q = me.qz || {}, tot = quizTotals(Q), at = list.findIndex(x => x.uid === user.uid);
+  const secs = await sectionsByIds(Object.keys(Q).filter(id => Q[id] && +Q[id].n > 0)).catch(() => []);
+  const name = nameOf(user, me), days = Array.isArray(me.activeDays) ? me.activeDays : [], done = Object.values(me.doneBooks || {}).filter(Boolean).length;
+  const row = (k, v) => `<div><span>${esc(T(k))}</span><b><em>${v}</em></b></div>`;
+  const results = secs.filter(s => Q[s.id] && +Q[s.id].n > 0);
+  const resRows = results.map((s, k) => { const r = Q[s.id]; return `<div class="p-gr-row"><span class="p-lnk"><i class="n">${n2(k + 1)}</i><span class="tx"><span class="p-t">${esc(s.name)}</span><small class="p-sy">${esc(T('lb_stat', { c: toBn(r.c || 0), w: toBn(r.w || 0), x: toBn(r.x || 0) }))}</small></span></span><b class="p-bd"><i>${toBn(r.p || 0)}/${toBn(r.mx || 0)}</i></b></div>`; }).join('');
+  app.innerHTML = `<div class="p-stack">` +
+    `<section class="p-card pf-hero rv"><i class="pf-av">${esc(String(name).trim().charAt(0).toUpperCase() || '?')}</i><h2 class="pf-nm">${esc(name)}</h2><p class="pf-em">${esc(user.email || '')}</p>` +
+    `<div class="pf-tiles"><div><b>${toBn(tot.p)}</b><span>${esc(T('pf_pts'))}</span></div><div><b>${at >= 0 ? n2(at + 1) : '—'}</b><span>${esc(T('pf_rank'))}</span></div><div><b>${tot.n ? toBn(accOf(tot.c, tot.n)) + '%' : '—'}</b><span>${esc(T('pf_acc'))}</span></div></div></section>` +
+    `<section class="p-card p-info rv" style="--i:1"><h3 class="p-t">${esc(T('pf_quiz'))}</h3><div class="rows">${row('pf_att', toBn(tot.x))}${row('pf_right', toBn(tot.c))}${row('pf_wrong', toBn(tot.w))}</div></section>` +
+    `<section class="p-gr rv" style="--i:2"><h3 class="p-t"><span>${esc(T('pf_res'))}</span></h3>${resRows || `<p class="pf-none">${esc(T('pf_none'))}</p>`}</section>` +
+    `<section class="p-card p-info rv" style="--i:3"><h3 class="p-t">${esc(T('pf_study'))}</h3><div class="rows">${row('pf_books', toBn(done))}${row('pf_days', toBn(days.length))}${row('pf_streak', toBn(streakOf(days)))}</div></section>` +
+    `</div>`;
+} catch (err) { console.error(err); app.innerHTML = msgHtml(T('load_err'), true); }
+</script>
+</body>
+</html>

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#103C4A">
+<title>যাচাই</title>
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="p-body">
+<main class="p-wrap" id="app"></main>
+<script type="module">
+import { db, collection, getDocs, getDoc, doc } from "./assets/firebase.js";
+import { requireUser, touchUser, freshUser, topHtml, setTop, boxBtn, n2, rollNum, loaderHtml, msgHtml, emptyHtml, clampAll, mountNav, siteData,
+  quizLevels, quizCount, isQuizHome, quizPts, loadLevel, qPts, saveQuizResult, accOf, QZ_LETTERS, ICON, qs, esc, toBn, T } from "./assets/app.js";
+
+/* one page, three screens: the list of levels (no ?l=), the questions one by one (?l=<level>), then the result */
+const app = document.getElementById('app'), $ = (id) => document.getElementById(id);
+const lv = qs('l'), fromSec = qs('from') === 's';
+document.body.insertAdjacentHTML('afterbegin', topHtml({ title: '', back: 'index.html' }));
+app.innerHTML = loaderHtml(3);
+const user = await requireUser(); touchUser(user);
+const site = async () => { try { return (await siteData()).s || {}; } catch (e) { return {}; } };
+
+async function hub() {
+  mountNav('quiz');
+  const sd = await site();
+  let title = '';
+  try { const hs = await getDocs(collection(db, 'home_buttons')); const h = hs.docs.map(d => ({ id: d.id, ...d.data() })).find(x => x.v === 3 && !x.hidden && isQuizHome(x)); title = h ? h.name : ''; } catch (e) { /* default title */ }
+  title = title || T('nav_quiz'); document.title = title; setTop(title);
+  const [secs, me] = await Promise.all([quizLevels(sd), freshUser(user)]);
+  const items = secs.filter(x => quizCount(sd, x.id) > 0);
+  app.innerHTML = items.length ? `<div class="p-stack btns">${items.map((b, i) => {
+    const n = quizCount(sd, b.id), r = (me.qz || {})[b.id];
+    const sub = [T('qz_cnt', { n: toBn(n) }), r && +r.n > 0 ? T('qz_best', { p: toBn(r.p), m: toBn(r.mx) }) : ''].filter(Boolean).join(' · ');
+    return boxBtn({ label: b.name, sub, href: 'quiz.html?l=' + encodeURIComponent(b.id), i });
+  }).join('')}</div>` : emptyHtml('', T('qz_hub_empty'));
+  clampAll(app);
+}
+
+async function play(lv) {
+  const sd = await site();
+  let sec = null; try { const s = await getDoc(doc(db, 'section_buttons', lv)); if (s.exists()) sec = s.data(); } catch (e) { /* no name */ }
+  const name = (sec && sec.name) || ''; document.title = name || T('nav_quiz'); setTop(name);
+  const back = fromSec && sec ? 'books.html?s=' + encodeURIComponent(lv) : 'quiz.html';
+  $('pBack').href = back;
+  let list = [];
+  try { list = await loadLevel(lv); } catch (e) { console.error(e); app.innerHTML = msgHtml(T('load_err'), true); return; }
+  if (!list.length || (sec && (sec.hidden || sec.locked))) { mountNav('quiz'); app.innerHTML = emptyHtml('', T('qz_empty')); return; }
+  const def = quizPts(sd), total = list.length, mx = list.reduce((n, q) => n + qPts(q, def), 0);
+  let i = 0, c = 0, w = 0, pts = 0, lock = false;
+  $('pStick').insertAdjacentHTML('beforeend', `<div class="p-bar"><span class="p-pct"><span>${esc(T('qz_qn'))}</span> <b class="p-bd" id="qzN"></b></span><span class="p-pct"><span>${esc(T('qz_pts'))}</span> <b class="p-bd" id="qzP"></b></span></div><div class="qz-line"><i id="qzLine"></i></div>`);
+  rollNum($('qzP'), n2(0), 0);
+  const setN = (dir) => rollNum($('qzN'), n2(i + 1) + '/' + n2(total), dir);
+
+  function show() {
+    const q = list[i], opts = (q.o || []).map((t, k) => ({ t: String(t || '').trim(), k })).filter(x => x.t), qp = qPts(q, def);
+    app.className = 'p-wrap qz-wrap qz-anim';
+    app.innerHTML = `<section class="qz-card"><div class="qz-top"><span class="qz-pt">${n2(qp)} ${esc(T('qz_pts'))}</span></div><p class="qz-q">${esc(q.t)}</p></section>` +
+      `<div class="qz-bottom"><div class="qz-msg" id="qzMsg" role="status" aria-live="polite"></div><div class="qz-opts" id="qzOpts">${opts.map((o, j) =>
+        `<button type="button" class="p-opt" data-k="${o.k}" style="--i:${j}"><i class="l">${QZ_LETTERS[j] || ''}</i><span class="p-t">${esc(o.t)}</span><i class="mk"></i></button>`).join('')}</div></div>`;
+    setN(i === 0 ? 0 : 1); $('qzLine').style.width = (i / total * 100) + '%';
+    lock = false; scrollTo(0, 0);
+  }
+
+  app.onclick = (e) => {
+    const b = e.target.closest('.p-opt'); if (!b || lock || !$('qzOpts')) return; lock = true;
+    const q = list[i], k = +b.dataset.k, ok = k === q.a, qp = qPts(q, def);
+    $('qzOpts').classList.add('done');
+    $('qzOpts').querySelectorAll('.p-opt').forEach(x => {
+      if (+x.dataset.k === q.a) { x.classList.add('ok'); x.querySelector('.mk').innerHTML = ICON.check; }
+      else if (x === b) { x.classList.add('bad'); x.querySelector('.mk').innerHTML = ICON.cross; }
+      else x.classList.add('dim');
+    });
+    const m = $('qzMsg'); m.className = 'qz-msg show ' + (ok ? 'ok' : 'bad');
+    m.textContent = ok ? T('qz_right') + ' ' + T('qz_plus', { n: toBn(qp) }) : T('qz_wrong');
+    if (ok) { c++; pts += qp; rollNum($('qzP'), n2(pts), 1); } else w++;
+    $('qzLine').style.width = ((i + 1) / total * 100) + '%';
+    setTimeout(() => { i++; if (i < total) show(); else finish(); }, ok ? 1000 : 1500);
+  };
+
+  async function finish() {
+    app.onclick = null; app.className = 'p-wrap qz-sum'; scrollTo(0, 0);
+    $('pStick').querySelectorAll('.p-bar, .qz-line').forEach(x => x.remove());
+    mountNav('quiz');
+    const pct = accOf(c, total), row = (k, v, id) => `<div><span>${esc(T(k))}</span><b><em${id ? ` id="${id}"` : ''}>${v}</em></b></div>`;
+    const note = pct >= 80 ? T('qz_hi') : pct >= 50 ? T('qz_mid') : T('qz_lo');
+    app.innerHTML = `<section class="p-card p-info qz-res rv"><h3 class="p-t"><span>${esc(T('qz_res_t'))}</span></h3>` +
+      `<div class="top"><div class="qz-ring"><svg viewBox="0 0 100 100" aria-hidden="true"><circle class="bg" cx="50" cy="50" r="42"/><circle class="fg" id="qzFg" cx="50" cy="50" r="42" pathLength="100"/></svg><div class="mid"><b id="qzPct">${toBn(0)}%</b><small>${esc(T('qz_acc'))}</small></div></div><p class="qz-note">${esc(note)}</p><span class="qz-new" id="qzNew" hidden>${esc(T('qz_new'))}</span></div>` +
+      `<div class="rows">${row('qz_s_total', toBn(total))}${row('qz_s_right', toBn(c))}${row('qz_s_wrong', toBn(w))}${row('qz_s_pts', toBn(pts) + ' / ' + toBn(mx))}${row('qz_s_all', '…', 'qzAll')}</div><p class="p-err" id="qzErr" hidden></p></section>` +
+      `<div class="p-stack btns qz-m">${boxBtn({ label: T('qz_again'), href: location.pathname.split('/').pop() + location.search, i: 1, cls: 'slim' })}${boxBtn({ label: T('qz_to_lb'), href: 'leaderboard.html', i: 2, cls: 'slim' })}${boxBtn({ label: T('qz_back'), href: back, i: 3, cls: 'slim' })}</div>`;
+    clampAll(app);
+    requestAnimationFrame(() => requestAnimationFrame(() => { $('qzFg').style.strokeDashoffset = String(100 - pct); }));
+    const t0 = performance.now(), el = $('qzPct'); (function tick(t) { const k = Math.min(1, (t - t0) / 900); el.textContent = toBn(Math.round(pct * k)) + '%'; if (k < 1) requestAnimationFrame(tick); })(t0);
+    try {
+      const out = await saveQuizResult(user, lv, { c, w, n: total, p: pts, mx });
+      $('qzAll').textContent = toBn(out.tot.p);
+      if (out.better) $('qzNew').hidden = false;
+    } catch (er) {
+      console.error(er); $('qzAll').textContent = '—'; const e = $('qzErr'); e.textContent = T('qz_save_err'); e.hidden = false;
+    }
+  }
+  show();
+}
+
+try { if (lv) await play(lv); else await hub(); } catch (err) { console.error(err); app.innerHTML = msgHtml(T('load_err'), true); }
+</script>
+</body>
+</html>
